@@ -1,4 +1,4 @@
-#-*- coding: utf-8 -*-
+# -*-  coding: utf-8 -*-
 #
 # Copyright 2015 Google Inc. All Rights Reserved.
 #
@@ -35,17 +35,20 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from openpyxl import load_workbook
+
 import math
 import os
 import random
 import sys
 import time
 import subprocess
+import re
 
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
-
+import time
 import data_utils
 from tensorflow.models.rnn.translate import seq2seq_model
 
@@ -80,6 +83,9 @@ FLAGS = tf.app.flags.FLAGS
 # See seq2seq_model.Seq2SeqModel for details of how they work.
 #_buckets = [(5, 10), (10, 15), (20, 25), (40, 50)]
 _buckets = [(7, 5), (10, 7), (17, 10), (37, 20)]
+# _buckets = [(10, 5), (15, 10), (20, 15), (25, 20), (30 , 25), (35, 30), (40, 35), (45, 40), (55, 50), (60, 55), (65, 60), (70, 65), (75, 70), (80, 75), (85, 80), (90, 85), (95, 90), (100, 95), (105, 100), (110, 105), (115, 110), (120, 115), (125, 120), (130, 125), (135, 130), (140, 135), (200, 140)]
+
+
 
 
 def read_data(source_path, target_path, max_size=None):
@@ -125,31 +131,37 @@ def read_data(source_path, target_path, max_size=None):
 
 def create_model(session, forward_only):
   """Create translation model and initialize or load parameters in session."""
+  # print(FLAGS.train_dir) # train
   if not os.path.exists(FLAGS.train_dir):
     os.mkdir(FLAGS.train_dir)
-
+  print('Step 1 : Create transliteration model')
   model = seq2seq_model.Seq2SeqModel(
       FLAGS.en_vocab_size, FLAGS.fr_vocab_size, _buckets,
       FLAGS.size, FLAGS.num_layers, FLAGS.max_gradient_norm, FLAGS.batch_size,
       FLAGS.learning_rate, FLAGS.learning_rate_decay_factor,
       forward_only=forward_only, use_lstm=FLAGS.use_lstm)
+  
   ckpt = tf.train.get_checkpoint_state(FLAGS.train_dir)
-  if ckpt and tf.gfile.Exists(ckpt.model_checkpoint_path):
-    print("Reading model parameters from %s" % ckpt.model_checkpoint_path)
+  print('Step 2 : Confirm checkpoint parameters')
+  # print(ckpt) # checkpoint
+  # print(ckpt.model_checkpoint_path) # check
+  if ckpt and tf.gfile.Exists(ckpt.model_checkpoint_path + '.index'):
+    print("Step 3 : Reading model parameters from %s" % ckpt.model_checkpoint_path)
     model.saver.restore(session, ckpt.model_checkpoint_path)
   else:
     print("Created model with fresh parameters.")
-    session.run(tf.initialize_all_variables())
+    session.run(tf.global_variables_initializer())
   return model
 
 
 def train():
   """Train a en->fr translation model using WMT data."""
   # Prepare WMT data.
-  print("Preparing WMT data in %s" % FLAGS.data_dir)
+  print("Preparing WMT data in %s" % FLAGS.data_dir) 
   en_train, fr_train, en_dev, fr_dev, _, _ = data_utils.prepare_wmt_data(
       FLAGS.data_dir, FLAGS.en_vocab_size, FLAGS.fr_vocab_size)
 
+  
   with tf.Session() as sess:
     # Create model.
     print("Creating %d layers of %d units." % (FLAGS.num_layers, FLAGS.size))
@@ -226,30 +238,50 @@ def train():
         mean_eval_ppx = np.mean(eval_ppx_list)
         if mean_eval_ppx < best_eval_ppx:
           best_eval_ppx = mean_eval_ppx
-          #print("BEST mean eval perplexity: %.3f" % best_eval_ppx)
-
+          print("BEST mean eval perplexity: %.3f" % best_eval_ppx)
+# 9701
 
 def decode():
+  load_wb = load_workbook('./test_xlsx/testfile.xlsx', data_only = True)
+  load_ws = load_wb['melon_song']
+
+  get_cells = load_ws['D2' : 'D10']
+  outputs = []
+  print("Step 4 : Transliteration Start")
+  for row in get_cells:
+   for cell in row:   
+      sentence = cell.value.strip()
+      if sentence:
+      # 모델에 개체명을 넣어서 나온 결과 값
+        output = transliteration.run(sentence)
+        outputs.append(output)
+      # 학습된 데이터 인지 체크
+        learned = transliteration.is_learned(sentence)
+        sys.stdout.flush()
+  outputs = []
+  start = time.time()
+  # 학습된 모델 불러오기
   transliteration = Transliteration()
+  # 원하는 열,행 범위 설정
+  get_cells = load_ws['D2' : 'D20']
+  print("Step 4 : 영어-한글 변환 결과 출력")
+  for row in get_cells:
+    for cell in row:   
+      sentence = cell.value.strip()
+      if sentence:
+        # 모델에 개체명을 넣어서 나온 결과 값
+        output = transliteration.run(sentence)
+        # 학습된 데이터 인지 체크
+        learned = transliteration.is_learned(sentence)
+        sys.stdout.flush()
+          # if not learned:
+          #   print("(%s is not trained word)" % sentence)
 
-  # Decode from standard input.
-  print("(Input any English word to transliterate Korean)")
-  sys.stdout.write("> ")
-  sys.stdout.flush()
-  sentence = sys.stdin.readline()
-  while sentence:
-    sentence = sentence.strip()
-    if sentence:
-      output = transliteration.run(sentence)
-      learned = transliteration.is_learned(sentence)
-      sys.stdout.flush()
-      if not learned:
-        print("(%s is not trained word)" % sentence)
-      print(output)
-    sys.stdout.write("> ")
-    sys.stdout.flush()
-    sentence = sys.stdin.readline()
-
+      # sentence : 개체명
+      # output : 모델에 개체명을 넣어서 나온 값
+      outputs.append(output)
+      print('Input :', sentence, '/ Ouput : ', output)
+  print("Output-Time : ", ((time.time() - start))/60 , "Output-Data-Numbers : ", len(outputs))
 
 def self_test():
   """Test the translation model."""
@@ -258,8 +290,8 @@ def self_test():
     # Create model with vocabularies of 10, 2 small buckets, 2 layers of 32.
     model = seq2seq_model.Seq2SeqModel(10, 10, [(3, 3), (6, 6)], 32, 2,
                                        5.0, 32, 0.3, 0.99, num_samples=8)
-    sess.run(tf.initialize_all_variables())
-
+    sess.run(tf.global_variables_initializer())
+   
     # Fake data set for both the (3, 3) and (6, 6) bucket.
     data_set = ([([1, 1], [2, 2]), ([3, 3], [4]), ([5], [6])],
                 [([1, 1, 1, 1, 1], [2, 2, 2, 2, 2]), ([3, 3, 3], [5, 6])])
@@ -277,20 +309,22 @@ class Transliteration:
   def __init__(self):
     self.sess = tf.Session()
     self.download_trained_if_not_exists()
-
     # Create model and load parameters.
     self.model = create_model(self.sess, True)
     self.model.batch_size = 1  # We decode one sentence at a time.
-
     # Load vocabularies.
+    # print(FLAGS.data_dir) / data
     en_vocab_path = os.path.join(FLAGS.data_dir,
                                  "vocab%d.en" % FLAGS.en_vocab_size)
+    # print(en_vocab_path) / data/vocab40.en
     fr_vocab_path = os.path.join(FLAGS.data_dir,
                                  "vocab%d.fr" % FLAGS.fr_vocab_size)
+    # print(fr_vocab_path) / data/vocab1000.fr
     self.en_vocab, _ = data_utils.initialize_vocabulary(en_vocab_path)
     _, self.rev_fr_vocab = data_utils.initialize_vocabulary(fr_vocab_path)
 
   def has_trained(self):
+    # print(FLAGS.train_dir) / train
     checkpoint_path = os.path.join(FLAGS.train_dir, "checkpoint")
     return os.path.isfile(checkpoint_path)
 
@@ -310,8 +344,7 @@ class Transliteration:
     # Get token-ids for the input sentence.
     token_ids = data_utils.sentence_to_token_ids(sentence, self.en_vocab)
     # Which bucket does it belong to?
-    bucket_id = min([b for b in xrange(len(_buckets))
-                     if _buckets[b][0] > len(token_ids)])
+    bucket_id = min(b for b in xrange(len(_buckets)) if _buckets[b][0] > len(token_ids) )  
     # Get a 1-element batch to feed the sentence to the model.
     encoder_inputs, decoder_inputs, target_weights = self.model.get_batch(
         {bucket_id: [(token_ids, [])]}, bucket_id)
