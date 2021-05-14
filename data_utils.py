@@ -106,7 +106,7 @@ def get_wmt_enfr_dev_set(directory):
 
 def basic_tokenizer(sentence):
   """Very basic tokenizer: split the sentence into a list of characters."""
-  return list(sentence.lower().decode('utf-8').strip())
+  return list(sentence.lower().encode('utf-8').strip())
 
 
 def create_vocabulary(vocabulary_path, data_path, max_vocabulary_size,
